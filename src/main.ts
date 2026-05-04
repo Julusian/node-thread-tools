@@ -1,3 +1,5 @@
 export * from './ipc-wrapper.js'
-export * from './respawn.js'
+export * from './respawn-base.js'
+export * from './respawn-process.js'
+export * from './respawn-worker.js'
 export * from './thread-util.js'

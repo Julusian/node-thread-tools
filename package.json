@@ -35,7 +35,7 @@
 			"prettier --write"
 		],
 		"*.{ts,tsx,js,jsx}": [
-			"run lint:raw --fix"
+			"yarn lint:raw --fix"
 		]
 	},
 	"engines": {
