@@ -1,0 +1,45 @@
+{
+	"name": "thread-tools",
+	"version": "0.1.0",
+	"type": "module",
+	"exports": {
+		".": {
+			"import": "./dist/main.js",
+			"require": "./dist/main.js",
+			"types": "./dist/main.d.ts"
+		},
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"prepare": "husky",
+		"build": "tsc",
+		"dev": "run build --watch",
+		"lint:raw": "eslint",
+		"lint": "run lint:raw .",
+		"lint-fix": "run lint --fix",
+		"license-validate": "sofie-licensecheck"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@sofie-automation/code-standard-preset": "^3.2.2",
+		"@types/node": "^22.19.17",
+		"eslint": "^10.3.0",
+		"husky": "^9.1.7",
+		"lint-staged": "^16.4.0",
+		"prettier": "^3.8.3",
+		"typescript": "^6.0.3"
+	},
+	"prettier": "@sofie-automation/code-standard-preset/.prettierrc.json",
+	"lint-staged": {
+		"*.{css,json,md,scss}": [
+			"prettier --write"
+		],
+		"*.{ts,tsx,js,jsx}": [
+			"run lint:raw --fix"
+		]
+	},
+	"engines": {
+		"node": ">=22.12"
+	},
+	"packageManager": "yarn@4.14.1"
+}

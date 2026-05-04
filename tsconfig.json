@@ -1,0 +1,17 @@
+{
+	"extends": "@sofie-automation/code-standard-preset/ts/tsconfig.lib",
+	"include": ["src/**/*.ts"],
+	"exclude": ["node_modules/**", "src/**/*spec.ts", "src/**/__tests__/*", "src/**/__mocks__/*"],
+	"compilerOptions": {
+		"outDir": "./dist",
+		"rootDir": "./src",
+		"types": ["node"],
+
+		"module": "node20",
+		"target": "es2024",
+		"lib": ["ES2024"],
+
+		// suppress warnings
+		"alwaysStrict": null
+	}
+}
