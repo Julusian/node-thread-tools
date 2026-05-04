@@ -7,6 +7,11 @@ export type { ResourceLimits }
 export interface RespawnWorkerOptions extends BaseRespawnOptions {
 	env?: NodeJS.ProcessEnv | typeof SHARE_ENV
 	/**
+	 * When `true`, the `filename` passed to the constructor is treated as an
+	 * inline JavaScript script to evaluate rather than a file path.
+	 */
+	eval?: boolean
+	/**
 	 * Data passed to the worker via `workerData`. If a function is provided it is
 	 * called on every (re)spawn so each new worker instance receives fresh data.
 	 */
@@ -42,6 +47,7 @@ export class RespawnWorkerMonitor extends RespawnMonitorBase<Worker, RespawnWork
 	public threadId: number | undefined
 
 	private readonly filename: string | URL | (() => string | URL)
+	private readonly evalMode: boolean
 	private readonly workerData: unknown | (() => unknown)
 	private readonly workerEnv: NodeJS.ProcessEnv | typeof SHARE_ENV | undefined
 	private readonly argv: unknown[] | undefined
@@ -63,6 +69,7 @@ export class RespawnWorkerMonitor extends RespawnMonitorBase<Worker, RespawnWork
 		super({ sleep: opts.sleep, maxRestarts: opts.maxRestarts })
 
 		this.filename = filename
+		this.evalMode = opts.eval ?? false
 		this.workerData = opts.workerData
 		this.workerEnv = opts.env
 		this.argv = opts.argv
@@ -82,6 +89,7 @@ export class RespawnWorkerMonitor extends RespawnMonitorBase<Worker, RespawnWork
 
 		const workerOptions: WorkerOptions = {
 			env: this.workerEnv,
+			eval: this.evalMode,
 			workerData,
 			argv: this.argv as string[] | undefined,
 			execArgv: this.execArgv,
