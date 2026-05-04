@@ -2,6 +2,8 @@
 	"name": "thread-tools",
 	"version": "0.1.0",
 	"type": "module",
+	"sideEffects": false,
+	"license": "MIT",
 	"exports": {
 		".": {
 			"import": "./dist/main.js",
@@ -10,6 +12,7 @@
 		},
 		"./package.json": "./package.json"
 	},
+	"repository": "https://github.com/Julusian/node-thread-tools",
 	"scripts": {
 		"prepare": "husky",
 		"build": "tsc",
@@ -41,5 +44,8 @@
 	"engines": {
 		"node": ">=22.12"
 	},
+	"files": [
+		"dist"
+	],
 	"packageManager": "yarn@4.14.1"
 }
