@@ -15,12 +15,15 @@
 	"repository": "https://github.com/Julusian/node-thread-tools",
 	"scripts": {
 		"prepare": "husky",
-		"build": "tsc",
-		"dev": "run build --watch",
+		"build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
+		"dev": "tsc -p tsconfig.build.json --watch",
 		"lint:raw": "eslint",
 		"lint": "run lint:raw .",
 		"lint-fix": "run lint --fix",
-		"license-validate": "sofie-licensecheck"
+		"license-validate": "sofie-licensecheck",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"typecheck": "tsc"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
@@ -30,7 +33,9 @@
 		"husky": "^9.1.7",
 		"lint-staged": "^16.4.0",
 		"prettier": "^3.8.3",
-		"typescript": "^6.0.3"
+		"typescript": "^6.0.3",
+		"vite": "^8.3.8",
+		"vitest": "^5.1.1"
 	},
 	"prettier": "@sofie-automation/code-standard-preset/.prettierrc.json",
 	"lint-staged": {
