@@ -27,7 +27,7 @@ jobs:
           node-version: 22.x
       - name: Install
         run: |
-          corepack enable
+          npm install -g corepack --force
           yarn install --immutable
         env:
           CI: true
@@ -62,7 +62,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - name: Install
         run: |
-          corepack enable
+          npm install -g corepack --force
           yarn install --immutable
         env:
           CI: true
