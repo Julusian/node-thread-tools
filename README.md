@@ -62,6 +62,8 @@ const result = await ipc.sendWithCb('doWork', { input: 'hello' })
 
 Sends a call and returns a `Promise` that resolves with the handler's return value. Rejects on timeout or if the provided `AbortSignal` is triggered. The caller side automatically sends a cancellation notice to the remote so it can abort in-progress work.
 
+If the handler throws, the promise rejects with an `Error` carrying the remote `name`, `message` and `stack` (and any extra properties such as `code`), with the local call site appended to the stack after a `--- via IPC call ---` marker. A thrown non-`Error` string is wrapped in an `Error`.
+
 #### `sendWithNoCb(name, payload)`
 
 Sends a fire-and-forget message (the handler's return type must be `never`).
@@ -69,6 +71,14 @@ Sends a fire-and-forget message (the handler's return type must be `never`).
 #### `receivedMessage(msg)`
 
 Feed incoming raw packets into the wrapper. Call this whenever a message arrives from the transport.
+
+#### `rejectAllPending(error)`
+
+Rejects every outbound call still awaiting a response, and aborts the signal of every inbound call still being handled. Call this when the other side has gone away (crashed, stopped or restarted), so callers find out immediately rather than when their timeout expires. No cancel messages are sent.
+
+#### `replaceHandlers(handlers)`
+
+Swaps the inbound handler table, eg to expose a larger API once the other side has completed a registration step.
 
 ---
 
@@ -133,7 +143,7 @@ import { importModuleFromPath } from 'thread-tools'
 const mod = await importModuleFromPath('/absolute/path/to/plugin.js')
 ```
 
-On Windows, file paths are automatically converted to `file://` URLs as required by the ESM loader.
+Absolute file paths are converted to `file://` URLs, as required by the ESM loader on Windows and for paths containing characters such as `#` or `%`.
 
 ## Development
 
@@ -142,4 +152,6 @@ yarn build       # compile TypeScript
 yarn dev         # watch mode
 yarn lint        # run ESLint
 yarn lint-fix    # run ESLint with auto-fix
+yarn test        # run the tests
+yarn typecheck   # typecheck the sources and tests
 ```
