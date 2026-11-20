@@ -20,7 +20,7 @@
 		"lint:raw": "eslint",
 		"lint": "run lint:raw .",
 		"lint-fix": "run lint --fix",
-		"license-validate": "sofie-licensecheck",
+		"license-validate": "sofie-licensecheck --allowLicenses MPL-2.0",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"typecheck": "tsc"

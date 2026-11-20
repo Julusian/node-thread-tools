@@ -1,0 +1,72 @@
+name: Node CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
+      - name: Install
+        run: |
+          corepack enable
+          yarn install --immutable
+        env:
+          CI: true
+      - name: Build
+        run: yarn build
+      - name: Typecheck
+        run: yarn typecheck
+      - name: Lint
+        run: yarn lint
+      - name: Check licenses
+        run: yarn license-validate
+
+  test:
+    name: Test on node ${{ matrix.node-version }} and ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # The respawn and process-kill code is platform specific, so test on all three
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [22.x, 24.x, 26.x]
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Install
+        run: |
+          corepack enable
+          yarn install --immutable
+        env:
+          CI: true
+      - name: Test
+        run: yarn test
+        env:
+          CI: true
