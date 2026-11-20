@@ -1,4 +1,5 @@
 export * from './ipc-wrapper.js'
+export { isProcessAlive, killProcessTree } from './process-kill.js'
 export * from './respawn-base.js'
 export * from './respawn-process.js'
 export * from './respawn-worker.js'
