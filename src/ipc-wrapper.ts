@@ -115,12 +115,18 @@ export class IpcWrapper<TOutbound extends { [key: string]: any }, TInbound exten
 		const id = this.#nextCallbackId++
 		this.#pendingCallbacks.set(id, callbacks)
 
-		this.#sendMessage({
-			direction: 'call',
-			name: String(name),
-			payload: msg,
-			callbackId: id,
-		})
+		try {
+			this.#sendMessage({
+				direction: 'call',
+				name: String(name),
+				payload: msg,
+				callbackId: id,
+			})
+		} catch (e) {
+			// The transport refused the message (eg closed, or the payload is not serializable), so nothing will ever respond
+			this.#releasePendingCallback(id, callbacks)
+			throw e
+		}
 
 		// Setup a timeout, creating the error in the call, so that the stack trace is useful
 		const timeoutError = new Error('Call timed out')
@@ -203,9 +209,8 @@ export class IpcWrapper<TOutbound extends { [key: string]: any }, TInbound exten
 					this.#pendingInboundAbortControllers.set(callbackId, abortController)
 				}
 
-				// TODO - should anything be logged here?
-				const data = msg.payload ? msg.payload : undefined
-				handler(data, abortController.signal).then(
+				// Wrapped in a promise so that a handler which throws synchronously is reported like a rejection
+				new Promise<unknown>((resolve) => resolve(handler(msg.payload, abortController.signal))).then(
 					(res) => {
 						if (!callbackId) return
 
@@ -259,22 +264,18 @@ export class IpcWrapper<TOutbound extends { [key: string]: any }, TInbound exten
 					return
 				}
 				const callbacks = this.#pendingCallbacks.get(msg.callbackId)
-				this.#pendingCallbacks.delete(msg.callbackId)
 				if (!callbacks) {
 					// Likely timed out or cancelled, we should ignore
 					return
 				}
 
-				clearTimeout(callbacks.timeout)
-				if (callbacks.signal && callbacks.abortHandler) {
-					callbacks.signal.removeEventListener('abort', callbacks.abortHandler)
-				}
+				this.#releasePendingCallback(msg.callbackId, callbacks)
 
-				const data = msg.payload ? msg.payload : undefined
+				// Note: the payload is passed through as-is, so that falsy results (0, false, '') survive
 				if (msg.success) {
-					callbacks.resolve(data)
+					callbacks.resolve(msg.payload)
 				} else {
-					callbacks.reject(deserializeError(data, callbacks.callstackError))
+					callbacks.reject(deserializeError(msg.payload, callbacks.callstackError))
 				}
 
 				break
