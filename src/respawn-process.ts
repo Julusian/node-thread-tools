@@ -30,11 +30,10 @@ import {
 	type StdioOptions,
 } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream'
-import { kill } from './process-kill.js'
-import { type BaseRespawnEvents, RespawnMonitorBase } from './respawn-base.js'
+import { isProcessAlive, killProcessTree } from './process-kill.js'
+import { type BaseRespawnEvents, type BaseRespawnOptions, RespawnMonitorBase } from './respawn-base.js'
 
-export interface RespawnOptions {
-	// name?: string
+export interface RespawnOptions extends BaseRespawnOptions {
 	cwd?: string
 	env?: NodeJS.ProcessEnv
 	uid?: number
@@ -48,19 +47,23 @@ export interface RespawnOptions {
 	fork?: boolean
 	windowsVerbatimArguments?: boolean
 
-	sleep?: number | number[] | ((restarts: number) => number)
-	maxRestarts?: number
+	/**
+	 * How long in ms to wait after SIGTERM before sending SIGKILL to anything left of the process tree. `false` to never
+	 * escalate. Defaults to 30000
+	 */
 	kill?: number | false
 }
 
 export interface RespawnEvents extends BaseRespawnEvents<RespawnChild> {
+	/** Emitted when part of the process tree didn't exit after SIGTERM, and was sent SIGKILL */
 	'force-kill': []
 }
 
 export type RespawnChild = ChildProcessByStdio<null | Writable, null | Readable, null | Readable>
 
 export class RespawnMonitor extends RespawnMonitorBase<RespawnChild, RespawnEvents> {
-	public pid: number | undefined = 0
+	/** The pid of the currently running child, or `undefined` when there is none */
+	public pid: number | undefined
 
 	private readonly command: string[] | (() => string[])
 	private readonly cwd: string | undefined
@@ -135,15 +138,44 @@ export class RespawnMonitor extends RespawnMonitorBase<RespawnChild, RespawnEven
 	}
 
 	protected killChild(child: RespawnChild): void {
-		if (this.killDelay !== false) {
-			const wait = setTimeout(() => {
-				if (!child.pid) return
-				kill(child.pid, 'SIGKILL')
+		const pid = child.pid
+		if (!pid) return
+
+		// Every process in the tree at the time of the SIGTERM. Any of these which ignore it and outlive their parent get
+		// reparented, so can't be found again by walking the tree from the child.
+		const signalledPids = killProcessTree(pid, 'SIGTERM').catch((e: unknown) => {
+			this.emit('warn', e instanceof Error ? e : new Error(String(e)))
+			return [pid]
+		})
+
+		const killDelay = this.killDelay
+		if (killDelay === false) return
+
+		const wait = setTimeout(() => {
+			void signalledPids.then(async (pids) => {
+				const survivors = pids.filter((p) => isProcessAlive(p))
+				if (survivors.length === 0) return
+
+				// Walk the tree again too, to catch anything spawned since the SIGTERM
+				const newPids = isProcessAlive(pid) ? await killProcessTree(pid, 'SIGKILL').catch(() => []) : []
+				for (const p of survivors) {
+					if (newPids.includes(p)) continue
+					try {
+						process.kill(p, 'SIGKILL')
+					} catch (_e) {
+						// process already gone
+					}
+				}
 				this.emit('force-kill')
-			}, this.killDelay)
-			child.on('exit', () => clearTimeout(wait))
-		}
-		if (child.pid) kill(child.pid)
+			})
+		}, killDelay)
+
+		// Once the child has exited, only keep waiting if something it spawned is still running
+		child.once('exit', () => {
+			void signalledPids.then((pids) => {
+				if (!pids.some((p) => isProcessAlive(p))) clearTimeout(wait)
+			})
+		})
 	}
 
 	protected addExitListener(child: RespawnChild, cb: () => void): void {
@@ -151,6 +183,6 @@ export class RespawnMonitor extends RespawnMonitorBase<RespawnChild, RespawnEven
 	}
 
 	protected onChildCleared(): void {
-		this.pid = 0
+		this.pid = undefined
 	}
 }

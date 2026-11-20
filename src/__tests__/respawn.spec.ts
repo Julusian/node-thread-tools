@@ -76,6 +76,54 @@ describe('RespawnWorkerMonitor', () => {
 	})
 })
 
+describe('RespawnMonitorBase', () => {
+	it('restarts immediately with sleep: 0', async () => {
+		const monitor = track(new RespawnWorkerMonitor('process.exit(1)', { eval: true, sleep: 0, maxRestarts: 1 }))
+		const exitTimes: number[] = []
+		monitor.on('exit', () => exitTimes.push(Date.now()))
+
+		monitor.start()
+		await once(monitor, 'crash')
+
+		expect(exitTimes).toHaveLength(2)
+		// A default of 1000ms used to be applied instead
+		expect(exitTimes[1] - exitTimes[0]).toBeLessThan(500)
+	})
+
+	it('does nothing when stopping a crashed monitor', async () => {
+		const monitor = track(new RespawnWorkerMonitor('process.exit(1)', { eval: true, sleep: 0, maxRestarts: 0 }))
+		monitor.start()
+		await once(monitor, 'stop')
+		expect(monitor.status).toBe('crashed')
+
+		const events = recordEvents(monitor)
+		await new Promise<void>((resolve) => monitor.stop(resolve))
+
+		expect(events).toEqual([])
+		expect(monitor.status).toBe('crashed')
+	})
+
+	it('waits for the child to exit when stop is called while already stopping', async () => {
+		// Delay exiting after terminate isn't possible for a worker, so use a process which ignores SIGTERM briefly
+		const script = `process.on('SIGTERM', () => setTimeout(() => process.exit(0), 200)); setInterval(() => {}, 1000)`
+		const monitor = track(new RespawnMonitor([process.execPath, '-e', script], { env: process.env, kill: false }))
+		monitor.start()
+		await new Promise((r) => setTimeout(r, 200)) // let the SIGTERM handler be installed
+
+		const order: string[] = []
+		monitor.on('exit', () => order.push('exit'))
+		monitor.stop(() => order.push('first'))
+		await new Promise<void>((resolve) =>
+			monitor.stop(() => {
+				order.push('second')
+				resolve()
+			})
+		)
+
+		expect(order).toEqual(['exit', 'first', 'second'])
+	})
+})
+
 describe('RespawnMonitor', () => {
 	it('respawns a process which exits, until maxRestarts is reached', async () => {
 		const monitor = track(
@@ -90,6 +138,43 @@ describe('RespawnMonitor', () => {
 		expect(exitCodes).toEqual([2, 2])
 		expect(monitor.status).toBe('crashed')
 	})
+
+	it('clears pid once stopped', async () => {
+		const monitor = track(
+			new RespawnMonitor([process.execPath, '-e', 'setInterval(() => {}, 1000)'], { env: process.env })
+		)
+		monitor.start()
+		expect(monitor.pid).toBeTypeOf('number')
+
+		await new Promise<void>((resolve) => monitor.stop(resolve))
+		expect(monitor.pid).toBeUndefined()
+	})
+
+	it.skipIf(process.platform === 'win32')(
+		'sends SIGKILL to descendants which ignore SIGTERM and outlive the child',
+		async () => {
+			const script = `
+			const { spawn } = require('node:child_process')
+			const grandchild = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: 'ignore' })
+			process.stdout.write(String(grandchild.pid) + '\\n')
+			setInterval(() => {}, 1000)
+		`
+			const monitor = track(new RespawnMonitor([process.execPath, '-e', script], { env: process.env, kill: 300 }))
+			const forceKilled = once(monitor, 'force-kill')
+
+			monitor.start()
+			const [data] = (await once(monitor, 'stdout')) as [Buffer]
+			const grandchildPid = parseInt(data.toString(), 10)
+			await new Promise((r) => setTimeout(r, 200)) // let the grandchild install its SIGTERM handler
+
+			await new Promise<void>((resolve) => monitor.stop(resolve))
+			expect(isAlive(grandchildPid)).toBe(true) // it ignored the SIGTERM
+
+			await forceKilled
+			for (let i = 0; i < 50 && isAlive(grandchildPid); i++) await new Promise((r) => setTimeout(r, 20))
+			expect(isAlive(grandchildPid)).toBe(false)
+		}
+	)
 
 	it.skipIf(process.platform === 'win32')('kills the whole process tree on stop', async () => {
 		// The child spawns a grandchild and reports its pid, then both sleep

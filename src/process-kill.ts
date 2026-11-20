@@ -49,37 +49,58 @@ async function getChildPids(pid: number): Promise<number[]> {
 	})
 }
 
-export function kill(pid: number, sig = 'SIGTERM'): void {
+/**
+ * Send a signal to a process and all of its descendants.
+ * Resolves with every pid which was signalled (including `pid` itself), so that the caller can check on them later. This
+ * matters as descendants which outlive their parent get reparented, and can no longer be found by walking the tree.
+ *
+ * On windows the whole tree is always forcefully terminated with `taskkill /T /F`, whatever the signal, as there is no
+ * equivalent of SIGTERM. The result is then just `[pid]`.
+ */
+export async function killProcessTree(pid: number, sig: NodeJS.Signals = 'SIGTERM'): Promise<number[]> {
 	if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) {
 		throw new Error('Invalid PID: ' + pid)
 	}
 
 	if (process.platform === 'win32') {
-		// taskkill handles the process tree itself (/T). It is always forceful (/F), as windows has no equivalent of SIGTERM
-		exec(`taskkill /pid ${pid} /T /F`, (err) => {
-			if (err) console.warn(`taskkill failed for PID ${pid}:`, err.message)
+		await new Promise<void>((resolve) => {
+			exec(`taskkill /pid ${pid} /T /F`, (err) => {
+				if (err) console.warn(`taskkill failed for PID ${pid}:`, err.message)
+				resolve()
+			})
 		})
-		return
+		return [pid]
 	}
 
-	getChildPids(pid)
-		.then((children) => {
-			for (const p of [...children, pid]) {
-				try {
-					process.kill(p, sig)
-				} catch (_) {
-					// process already gone
-				}
-			}
-		})
-		.catch(() => {
-			// If we fail to get child PIDs, at least try to kill the main process
-			try {
-				process.kill(pid, sig)
-			} catch (_) {
-				// process already gone
-			}
+	let children: number[] = []
+	try {
+		children = await getChildPids(pid)
+	} catch (_e) {
+		// If we fail to get child PIDs, at least try to kill the main process
+		console.warn(`Failed to get child processes of PID ${pid}, some child processes may not have been killed`)
+	}
 
-			console.warn(`Failed to get child processes of PID ${pid}, some child processes may not have been killed`)
-		})
+	const pids = [...children, pid]
+	for (const p of pids) {
+		try {
+			process.kill(p, sig)
+		} catch (_) {
+			// process already gone
+		}
+	}
+	return pids
+}
+
+/**
+ * Check whether a process is still running.
+ * A process owned by another user is reported as not alive, as it can't be ours (the pid must have been reused) and
+ * couldn't be signalled anyway.
+ */
+export function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0)
+		return true
+	} catch (_e) {
+		return false
+	}
 }

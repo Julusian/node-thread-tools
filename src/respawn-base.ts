@@ -3,8 +3,12 @@ import { EventEmitter } from 'node:events'
 
 export type { Serializable }
 
+const DEFAULT_SLEEP = 1000
+
 function defaultSleep(sleep: number | number[] | undefined): (restarts: number) => number {
-	const arr = Array.isArray(sleep) ? sleep : [sleep || 1000]
+	// Note: `0` is a valid delay (restart immediately), so only fall back to the default when nothing was given
+	const arr = Array.isArray(sleep) ? sleep : [sleep ?? DEFAULT_SLEEP]
+	if (arr.length === 0) arr.push(DEFAULT_SLEEP)
 	return (restarts: number): number => arr[restarts - 1] ?? arr[arr.length - 1]
 }
 
@@ -26,7 +30,12 @@ export interface BaseRespawnEvents<TChild> {
 }
 
 export interface BaseRespawnOptions {
+	/**
+	 * Delay in ms before restarting. An array gives the delay for each successive restart, repeating the last value.
+	 * A function is called with the restart count (starting at 1). Defaults to 1000
+	 */
 	sleep?: number | number[] | ((restarts: number) => number)
+	/** Give up and report a crash after this many restarts within 60s. -1 (the default) is unlimited */
 	maxRestarts?: number
 }
 
@@ -34,8 +43,7 @@ export abstract class RespawnMonitorBase<
 	TChild,
 	TEvents extends BaseRespawnEvents<TChild>,
 > extends EventEmitter<TEvents> {
-	public id: string | null = null
-	public crashed: boolean = false
+	/** When false, a child which exits is not restarted, and the monitor stops instead */
 	public shouldRestart: boolean = true
 
 	#status: RespawnStatus = 'stopped'
@@ -72,9 +80,22 @@ export abstract class RespawnMonitorBase<
 	/** Called when the tracked child reference is cleared. Override to reset type-specific identifiers (e.g. pid, threadId). */
 	protected onChildCleared(): void {}
 
+	/**
+	 * Stop the child, and don't restart it. `cb` is called once the child has exited.
+	 * When the monitor is already stopped or crashed this does nothing other than calling `cb`. A crashed monitor
+	 * keeps its `crashed` status, and does not emit `stop` a second time.
+	 */
 	stop(cb?: () => void): void {
-		if (this.#status === 'stopped' || this.#status === 'stopping') {
-			cb?.()
+		if (this.#status === 'stopped' || this.#status === 'crashed') {
+			if (cb) process.nextTick(cb)
+			return
+		}
+		if (this.#status === 'stopping') {
+			// Already stopping, so just wait for that to complete
+			if (cb) {
+				if (this._child) this.addExitListener(this._child, cb)
+				else process.nextTick(cb)
+			}
 			return
 		}
 		this.#status = 'stopping'
