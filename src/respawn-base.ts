@@ -100,7 +100,17 @@ export abstract class RespawnMonitorBase<
 		let clock = 60000
 
 		const loop = () => {
-			const child = this.spawnChild()
+			let child: TChild
+			try {
+				child = this.spawnChild()
+			} catch (e) {
+				// Spawning failed synchronously (eg invalid options). Retrying would fail the same way, so treat it as a crash.
+				// This can be run from a timer, so it must not be allowed to throw.
+				this.emitBase('warn', e instanceof Error ? e : new Error(String(e)))
+				this.#status = 'running'
+				this.#crashed()
+				return
+			}
 
 			this.#started = new Date()
 			this.#status = 'running'

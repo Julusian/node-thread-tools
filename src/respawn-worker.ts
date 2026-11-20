@@ -108,12 +108,15 @@ export class RespawnWorkerMonitor extends RespawnMonitorBase<Worker, RespawnWork
 	protected setupChild(
 		worker: Worker,
 		onExit: (code: number | null, signal: string | null) => void,
-		onError: (err: Error) => void
+		_onError: (err: Error) => void
 	): void {
 		worker.on('online', () => this.emit('online'))
 		worker.on('message', (message) => this.emit('message', message as Serializable))
 		worker.on('messageerror', (err) => this.emit('messageerror', err))
-		worker.on('error', onError)
+		// An uncaught exception inside the worker emits 'error' and is always followed by 'exit', so only report it here
+		// and let 'exit' decide whether to restart. Treating it as fatal (like a child process spawn error) would mean
+		// a crashing worker is never respawned.
+		worker.on('error', (err) => this.emit('warn', err))
 		worker.on('exit', (code) => onExit(code, null))
 
 		if (this.captureStdout) {
